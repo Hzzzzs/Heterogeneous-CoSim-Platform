@@ -29,7 +29,8 @@
 
 > 本平台采用了**双环级联闭环控制架构**，宏观位置环进行拓扑误差解算，微观姿态环进行底层 PID 防发散控制。
 >
-> ./docs/architecture.png
+> <img width="584" height="777" alt="architecture" src="https://github.com/user-attachments/assets/abd08c96-dead-4148-a775-8b9cd6150d71" />
+
 
 ---
 
