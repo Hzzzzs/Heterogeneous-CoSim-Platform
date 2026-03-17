@@ -1,0 +1,101 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\hzs\\3D version_1\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|c:\\users\\hzs\\3d version_1\\assets\\formationmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|solutionrelative:assets\\formationmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|C:\\Users\\hzs\\3D version_1\\assets\\udpreceiver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|solutionrelative:assets\\udpreceiver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|C:\\Users\\hzs\\3D version_1\\assets\\scripts\\crazyflieflightcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\crazyflieflightcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|C:\\Users\\hzs\\3D version_1\\assets\\scripts\\propellervisuals.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\propellervisuals.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|C:\\Users\\hzs\\3D version_1\\assets\\scripts\\unicyclemodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{BEFBE939-BAAF-2FFD-BB44-BA637A9EBA04}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\unicyclemodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "FormationManager.cs",
+              "DocumentMoniker": "C:\\Users\\hzs\\3D version_1\\Assets\\FormationManager.cs",
+              "RelativeDocumentMoniker": "Assets\\FormationManager.cs",
+              "ToolTip": "C:\\Users\\hzs\\3D version_1\\Assets\\FormationManager.cs",
+              "RelativeToolTip": "Assets\\FormationManager.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABgAAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-03T16:20:47.823Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "UDPReceiver.cs",
+              "DocumentMoniker": "C:\\Users\\hzs\\3D version_1\\Assets\\UDPReceiver.cs",
+              "RelativeDocumentMoniker": "Assets\\UDPReceiver.cs",
+              "ToolTip": "C:\\Users\\hzs\\3D version_1\\Assets\\UDPReceiver.cs",
+              "RelativeToolTip": "Assets\\UDPReceiver.cs",
+              "ViewState": "AgIAAHQAAAAAAAAAAAAuwAoAAAAUAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-26T10:07:04.048Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "PropellerVisuals.cs",
+              "DocumentMoniker": "C:\\Users\\hzs\\3D version_1\\Assets\\Scripts\\PropellerVisuals.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\PropellerVisuals.cs",
+              "ToolTip": "C:\\Users\\hzs\\3D version_1\\Assets\\Scripts\\PropellerVisuals.cs",
+              "RelativeToolTip": "Assets\\Scripts\\PropellerVisuals.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABcAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-22T07:39:00.622Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "CrazyflieFlightController.cs",
+              "DocumentMoniker": "C:\\Users\\hzs\\3D version_1\\Assets\\Scripts\\CrazyflieFlightController.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\CrazyflieFlightController.cs",
+              "ToolTip": "C:\\Users\\hzs\\3D version_1\\Assets\\Scripts\\CrazyflieFlightController.cs",
+              "RelativeToolTip": "Assets\\Scripts\\CrazyflieFlightController.cs",
+              "ViewState": "AgIAAGkAAAAAAAAAAAAYwIQAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-22T07:37:04.864Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "UnicycleModel.cs",
+              "DocumentMoniker": "C:\\Users\\hzs\\3D version_1\\Assets\\Scripts\\UnicycleModel.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\UnicycleModel.cs",
+              "ToolTip": "C:\\Users\\hzs\\3D version_1\\Assets\\Scripts\\UnicycleModel.cs",
+              "RelativeToolTip": "Assets\\Scripts\\UnicycleModel.cs",
+              "ViewState": "AgIAAB8AAAAAAAAAAAAQwCYAAAAXAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-03T02:03:38.603Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
