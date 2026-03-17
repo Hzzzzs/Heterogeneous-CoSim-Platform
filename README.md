@@ -42,7 +42,7 @@
 
 ```bash
 # 克隆仓库
-git clone [https://github.com/YourUsername/Heterogeneous-CoSim-Platform.git](https://github.com/YourUsername/Heterogeneous-CoSim-Platform.git)
+git clone [https://github.com/Hzzzzs/Heterogeneous-CoSim-Platform.git](https://github.com/Hzzzzs/Heterogeneous-CoSim-Platform.git)
 cd Heterogeneous-CoSim-Platform
 
 # 安装 Python 物理后端依赖
