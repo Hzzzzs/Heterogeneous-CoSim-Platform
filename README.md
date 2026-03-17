@@ -24,23 +24,12 @@
 
 ---
 
-## 📸 仿真效果展示 (Gallery)
-
-我们在不同规模和扰动条件下对编队算法进行了充分验证：
-
-| 动态拓扑自适应 (Dynamic Topology) | 复杂地形约束 (Terrain Constraints) |
-| :---: | :---: |
-| *[在这里放置动图：拖拽单架无人机，编队自动恢复]* <br> `![Demo 1](./docs/demo1.gif)` | *[在这里放置动图：UGV 爬坡与 UAV 高度补偿]* <br> `![Demo 2](./docs/demo2.gif)` |
-| **大规模集群编队 (Swarm Control)** | **系统监控面板 (UI Dashboard)** |
-| *[在这里放置截图：10+ 智能体的编队展示]* <br> `![Demo 3](./docs/demo3.png)` | *[在这里放置截图：Unity 中的 6-DoF 实时状态监控面板]* <br> `![Demo 4](./docs/demo4.png)` |
-
----
 
 ## ⚙️ 系统架构 (Architecture)
 
 > 本平台采用了**双环级联闭环控制架构**，宏观位置环进行拓扑误差解算，微观姿态环进行底层 PID 防发散控制。
 >
-> [Architecture Diagram](./docs/architecture.png)
+> ./docs/architecture.png
 
 ---
 
@@ -93,15 +82,4 @@ python main_hetero_sim.py
 ---
 
 **License:** This project is licensed under the MIT License - see the LICENSE file for details.
-```
 
-***
-
-### 💡 接下来你可以这样操作：
-
-1. 把之前录制的那些能够体现“物理引擎强大”的录屏，用在线工具（比如 ezgif.com）转成小体积的 `.gif` 文件。
-2. 在本地项目文件夹里新建一个 `docs` 文件夹，把动图和架构图放进去。
-3. 把这些图片的名字替换到 README 里面对应的 `[]` 位置。
-4. 运行 `git add .` -> `git commit -m "Add professional README and media"` -> `git push`。
-
-你的 GitHub 仓库主页将会立刻变得极具学术威慑力！如果你在制作架构图或转录 GIF 的过程中遇到任何问题，随时找我。
