@@ -1,5 +1,19 @@
-# TODOs 
+# TODOs
 TODOs.md
+
+# Experiment result directories (CSV, figures — large binary/data files)
+experiment_*/
+hetero_noise/
+hetero_noise_moving/
+hetero_noise_moving_kf/
+experiment_hetero_moving_slow/
+experiment_hetero_moving_compensated/
+analysis_out*/
+drone_trajectories*.csv
+# Misc large files
+main.pdf
+PyBullet_Terrain.obj
+*.md5
 examples/debug.py
 examples/test.py
 
