@@ -1,27 +1,41 @@
-"""Noise robustness sweep for the heterogeneous 3-UAV + 1-UGV formation
-with a common cruise velocity AND a per-edge Kalman filter on the noisy
-local-frame relative-position measurements.
+"""Experiment 3 — Measurement-noise robustness sweep (no Kalman filter).
 
-Setup matches experiment_hetero_noise.py (moving variant) — same node order,
-same control law, same common cruise base_vel = [0.5, 0, 0], same sigma sweep,
-same baseline (HIL sigma=0). The only difference: every follower runs a small
-3D Kalman filter on each of its neighbor measurements before feeding them to
-the formation control law.
+WHAT IT DOES
+    Sweeps Gaussian sensor noise injected on every follower's per-edge
+    relative-position measurement, with the formation cruising at a common
+    base_vel = [0.5, 0, 0] m/s. Locates the engineering robustness boundary:
+    the formation stays usable up to a threshold sigma, then degrades and
+    eventually goes unstable. Run Experiment 4 (KF) to see this boundary
+    pushed outward.
 
-KF design (per (follower, neighbor) pair, independent):
-  state     x ∈ ℝ³  : the relative position of neighbor j in follower i's body frame
-  process   x_{k+1} = x_k + w_k,           Q = q · I  (random walk, q is fixed)
-  measurement z_k = x_k + v_k,             R = σ² · I (per-axis Gaussian)
-  init      x_0 = first measurement,        P_0 = R + Q
-  predict   P_pred = P + Q
-  gain      K = P_pred / (P_pred + R)
-  update    x_post = x_pred + K (z - x_pred);  P_post = (1 - K) P_pred
+    Noise model (per follower i, per neighbor j, independent each step):
+        z_ij_meas = R_z(-yaw_i) (x_j - x_i) + n_ij,   n_ij ~ N(0, sigma^2 I_3)
+        u_i^local = sum_j M_ij @ z_ij_meas
+        u_i^world = R_z(+yaw_i) u_i^local
+    Leaders (UAV_L, UGV) have zero formation feedback. The clean HIL sigma=0
+    run is used as the comparison baseline (no ODE comparison here).
 
-Outputs go to hetero_noise_moving_kf/.
+HOW TO RUN
+    python -m hetero_cosim.experiments.noise
+    Each sigma's HIL trajectory is cached in hetero_noise_moving/raw/.
+    Delete that folder to force a fresh sweep.
+
+CONFIG (edit constants near the top)
+    SIGMAS   list of noise std values to sweep (meters).
+    PICK     the three sigmas drawn on the figures (weak/medium/strong).
+    BASE_VEL common cruise velocity (default [0.5, 0, 0]).
+
+OUTPUTS  ->  hetero_noise_moving/
+    raw/sigma_*.csv               per-sigma HIL trajectory (6000 x 12)
+    metrics.csv                   per-sigma ||Mx(T)||, tail_mean, settling time,
+                                  endpoint distance to the sigma=0 baseline
+    figures/mx_norm_vs_time.png   ||Mx|| curves for the picked sigmas
+    figures/formation_trajectories.png   3D trajectories at the picked sigmas
 """
 
 import csv as _csv
 import os
+import socket
 import time
 
 import matplotlib
@@ -35,10 +49,11 @@ from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.utils.enums import DroneModel, Physics
 
-from run_hetero_three_uav_one_ugv_new import get_dynamics_and_init
-from tests.ugv_chassis_control import UGVController
+from hetero_cosim.formations.hetero_ugv import get_dynamics_and_init
+from hetero_cosim.ugv_chassis_control import UGVController
+from hetero_cosim.unity_bridge import UnityBridge
 
-OUT = "hetero_noise_moving_kf"
+OUT = "hetero_noise_moving"
 RAW = os.path.join(OUT, "raw")
 FIG = os.path.join(OUT, "figures")
 
@@ -46,16 +61,18 @@ SIGMAS = [0.0, 0.02, 0.05, 0.10, 0.15, 0.20, 0.30, 0.50]
 PICK   = {"weak": 0.15, "medium": 0.30, "strong": 0.50}
 
 STEPS = 6000
-LOOKAHEAD_DT = 0.01
+# LOOKAHEAD_DT is only used inside the per-step formation update for target_pos
+# (target_pos = cur_pos + LOOKAHEAD_DT * v_cmd). It does NOT determine real time.
+# Real per-step physics time is set by env.PYB_TIMESTEP (default 1/240 s); we
+# use PYB_DT for time axes, settling-time, and total-time computations.
+LOOKAHEAD_DT = 0.001
 PYB_DT       = 1.0 / 240.0
 SEED_NOISE = 42
 
+# Common cruise velocity applied to ALL agents (including leaders), same as
+# experiment_hetero_moving.py. The whole formation translates along +X at this
+# speed; followers maintain the relative geometry via the local-frame law.
 BASE_VEL = np.array([0.5, 0.0, 0.0])
-
-# Kalman filter process noise (random-walk variance per step, per axis).
-# At PYB_DT ≈ 4 ms and ~0.5 m/s motion, neighbor pos in body frame moves
-# ~2 mm/step, so we expect random-walk std on the order of 5 mm.
-KF_Q = (5e-3) ** 2
 
 NUM_UAVS = 3
 NUM_UGVS = 1
@@ -67,7 +84,7 @@ IDX_UAV_F1     = 2
 IDX_UAV_F2     = 3
 
 LABELS = ["UAV_L", "UGV", "UAV_F1", "UAV_F2"]
-PAIRS  = [(0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
+PAIRS  = [(0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]   # 5 communication edges
 
 
 def Rz(angle):
@@ -75,12 +92,11 @@ def Rz(angle):
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
 
 
-def run_hil(sigma, M, x0, steps=STEPS, seed=SEED_NOISE, q=KF_Q):
-    """HIL run with noise on per-edge body-frame measurements + per-edge KF.
-
-    The KF is only meaningful when sigma > 0; for sigma = 0 we still run it
-    (with R = 0) so the data flow is identical — it then degenerates into a
-    pass-through (K = 1) and adds no error.
+def run_hil(sigma, M, x0, steps=STEPS, seed=SEED_NOISE):
+    """Run one PyBullet simulation with noise injected on each follower's
+    pairwise relative-position measurement. Returns pos_history of shape
+    (steps, TOTAL_AGENTS*3) in virtual-state column order
+    [UAV_L, UGV, UAV_F1, UAV_F2].
     """
     rng = np.random.default_rng(seed)
 
@@ -96,14 +112,7 @@ def run_hil(sigma, M, x0, steps=STEPS, seed=SEED_NOISE, q=KF_Q):
                         physicsClientId=env.CLIENT)
     ugv_controller = UGVController(ugv_id, env.CLIENT)
 
-    # Per-edge KF state: kf_x[i, j] = 3D estimate of neighbor j in follower i's
-    # body frame; kf_P[i, j] = scalar covariance (isotropic in 3D).
-    # Only entries (i, j) where i is a follower and M_ij is nonzero are used.
-    kf_x = np.zeros((TOTAL_AGENTS, TOTAL_AGENTS, 3))
-    kf_P = np.zeros((TOTAL_AGENTS, TOTAL_AGENTS))   # scalar, broadcast to 3D
-    kf_init = np.zeros((TOTAL_AGENTS, TOTAL_AGENTS), dtype=bool)
-    R = sigma ** 2  # measurement variance (per axis)
-
+    bridge = UnityBridge()
     pos_hist = np.zeros((steps, TOTAL_AGENTS, 3))
     uav_virtual_idx = [IDX_UAV_LEADER, IDX_UAV_F1, IDX_UAV_F2]
 
@@ -113,6 +122,7 @@ def run_hil(sigma, M, x0, steps=STEPS, seed=SEED_NOISE, q=KF_Q):
             ugv_pos, ugv_quat = p.getBasePositionAndOrientation(
                 ugv_id, physicsClientId=env.CLIENT)
 
+            # Build 12-dim virtual state
             real_x = np.zeros(TOTAL_AGENTS * 3)
             real_x[IDX_UAV_LEADER*3 : IDX_UAV_LEADER*3+3] = obs_multi[0][0:3]
             real_x[IDX_UGV*3        : IDX_UGV*3+3]        = np.array(ugv_pos)
@@ -140,32 +150,15 @@ def run_hil(sigma, M, x0, steps=STEPS, seed=SEED_NOISE, q=KF_Q):
                     M_ij = M[3*agent_idx:3*agent_idx+3, 3*nb:3*nb+3]
                     if np.allclose(M_ij, 0):
                         continue
-                    # Truth measurement in follower's body frame
-                    dp_world  = real_x[3*nb:3*nb+3] - xi
-                    rel_local_truth = R_zi_inv @ dp_world
-                    # Apply sensor noise
+                    dp_world = real_x[3*nb:3*nb+3] - xi
+                    rel_local = R_zi_inv @ dp_world
                     if sigma > 0:
-                        z = rel_local_truth + rng.normal(0.0, sigma, size=3)
-                    else:
-                        z = rel_local_truth.copy()
-                    # ---- Kalman filter (per (i, nb) edge) ----
-                    if not kf_init[agent_idx, nb]:
-                        kf_x[agent_idx, nb] = z.copy()
-                        kf_P[agent_idx, nb] = R + q
-                        kf_init[agent_idx, nb] = True
-                        rel_local = z   # first sample: no smoothing yet
-                    else:
-                        # predict
-                        P_pred = kf_P[agent_idx, nb] + q
-                        # update
-                        K_gain = P_pred / (P_pred + R) if (P_pred + R) > 0 else 0.0
-                        kf_x[agent_idx, nb] = kf_x[agent_idx, nb] + K_gain * (z - kf_x[agent_idx, nb])
-                        kf_P[agent_idx, nb] = (1.0 - K_gain) * P_pred
-                        rel_local = kf_x[agent_idx, nb]
+                        rel_local = rel_local + rng.normal(0.0, sigma, size=3)
                     v_local += M_ij @ rel_local
                 velocities_matrix[agent_idx] = R_zi @ v_local
 
-            # Common cruise feedforward (every agent, leaders included)
+            # Common feedforward: every agent (leaders and followers) gets
+            # base_vel added on top of its formation feedback.
             velocities_matrix += BASE_VEL[None, :]
 
             velocities  = velocities_matrix.flatten()
@@ -188,16 +181,19 @@ def run_hil(sigma, M, x0, steps=STEPS, seed=SEED_NOISE, q=KF_Q):
                     target_rpy=np.zeros(3), target_vel=target_vel_uav[j])
                 actions[j] = a
                 pos_hist[i, uav_virtual_idx[j], :] = obs_multi[j][0:3]
+                bridge.send_uav(j, obs_multi[j][0:3], obs_multi[j][7:10])
 
             target_vel_ugv = target_vels[IDX_UGV].copy()
             target_vel_ugv = np.clip(target_vel_ugv, -1.0, 1.0)
             target_vel_ugv[2] = 0.0
             ugv_controller.compute_and_apply_control(ugv_quat, target_vel_ugv)
             pos_hist[i, IDX_UGV, :] = ugv_pos
+            bridge.send_ugv(0, ugv_pos, ugv_quat)
 
             env.step(actions)
     finally:
         env.close()
+        bridge.close()
     return pos_hist.reshape(steps, TOTAL_AGENTS * 3)
 
 
@@ -219,10 +215,10 @@ def main():
     os.makedirs(FIG, exist_ok=True)
 
     M, x0 = get_dynamics_and_init()
-    print(f"M eigenvalues (real, sorted): "
+    print(f"M eigenvalues (real parts, sorted): "
           f"{np.sort(np.real(np.linalg.eigvals(M)))}")
-    print(f"KF process noise q = {KF_Q:.2e}  (std ≈ {np.sqrt(KF_Q)*1000:.1f} mm/step)")
 
+    # ============== Run sweep ==============
     csv_paths = []
     t0 = time.time()
     for sigma in SIGMAS:
@@ -246,6 +242,7 @@ def main():
     base_final = baseline[-1].reshape(TOTAL_AGENTS, 3)
     base_norms = np.linalg.norm(baseline @ M.T, axis=1)
 
+    # ============== Metrics ==============
     metrics = []
     for sigma, hil in zip(SIGMAS, hil_trajs):
         Mx = hil @ M.T
@@ -272,7 +269,7 @@ def main():
         w.writeheader(); w.writerows(metrics)
     print(f"metrics -> {mcsv}")
 
-    # ---- Figure 1: ||Mx|| vs time ----
+    # ============== Figure 1: ||Mx|| vs time, linear y ==============
     pick_styles = {
         "weak":   ((0.18, 0.62, 0.32), "-"),
         "medium": ((0.85, 0.45, 0.10), "--"),
@@ -288,18 +285,19 @@ def main():
         c, ls = pick_styles[level]
         ax.plot(t_csv, norms, ls,
                 color=c, linewidth=1.5, alpha=0.95,
-                label=f"HIL+KF {level} ($\\sigma$={sigma})")
+                label=f"HIL {level} ($\\sigma$={sigma})")
     ax.set_xlabel("t (s)"); ax.set_ylabel(r"$\|Mx\|_2$")
-    ax.set_title(r"$\|Mx\|$ convergence with per-edge Kalman filter")
-    ax.grid(True, alpha=0.4); ax.legend(loc="upper right", fontsize=9)
+    ax.set_title(r"$\|Mx\|$ convergence under increasing measurement noise")
+    ax.grid(True, alpha=0.4)
+    ax.legend(loc="upper right", fontsize=9)
     fig.tight_layout()
     fig.savefig(os.path.join(FIG, "mx_norm_vs_time.png"), dpi=140)
     plt.close(fig)
 
-    # ---- Figure 2: 3D trajectories (weak / medium / strong) ----
+    # ============== Figure 2: 3D trajectories (weak/medium/strong) ==============
     agent_cmap = plt.get_cmap("tab10")
     fig = plt.figure(figsize=(15, 5.0))
-    fig.suptitle("Formation trajectories under three noise levels with KF "
+    fig.suptitle("Formation trajectories under three noise levels "
                  "(HIL $\\sigma$=0 finals overlaid as stars)",
                  fontsize=13, fontweight="bold")
     for k, (level, sigma) in enumerate(PICK.items()):

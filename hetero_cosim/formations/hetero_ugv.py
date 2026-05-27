@@ -31,7 +31,7 @@ from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.utils.enums import DroneModel, Physics
 
-from tests.ugv_chassis_control import UGVController
+from hetero_cosim.ugv_chassis_control import UGVController
 
 
 HEADLESS   = os.environ.get("HETERO_HEADLESS", "0") == "1"

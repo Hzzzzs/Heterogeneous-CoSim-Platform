@@ -11,10 +11,14 @@ class UGVController:
         self.ugv_id = ugv_id
         self.CLIENT = physics_client
         
-        # Husky 越野车的近似物理参数
-        self.wheel_radius = 0.165  # 车轮半径 (米)
-        self.track_width = 0.55    # 左右轮距 (米)
-        self.max_torque = 50.0     # 电机最大扭矩
+        # Husky 越野车的物理参数
+        # wheel_radius: 从 URDF 引用的 wheel.stl 几何文件直接量出的真实半径。
+        # 顶点 X/Z 方向 extent = 0.35552 m,Y(转轴方向)extent = 0.11446 m,
+        # 所以几何轮半径 = 0.35552/2 = 0.17776 m。这是 PyBullet 仿真的真实物理量,
+        # 不依赖任何标定试验。
+        self.wheel_radius = 0.17776  # 车轮几何半径 (米),从 wheel.stl 直接量得
+        self.track_width = 0.55      # 左右轮距 (米)
+        self.max_torque = 50.0       # 电机最大扭矩
         
         # 自动识别左右车轮的关节索引
         self.left_wheels = []

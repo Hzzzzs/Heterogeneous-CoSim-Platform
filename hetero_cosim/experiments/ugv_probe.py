@@ -1,11 +1,29 @@
-"""Probe UGV's actual steady-state speed vs. commanded speed.
+"""Utility — Calibrate the Husky UGV's effective wheel radius / speed tracking.
 
-Spawns a single Husky UGV (no UAVs, no formation feedback) and commands it
-with a constant target velocity along +X for several seconds. Reports the
-mean steady-state vx (sampled in the second half of the run, after transient).
+WHAT IT DOES
+    Spawns a single Husky UGV (no UAVs, no formation feedback) on flat ground
+    and drives it straight at a series of commanded velocities. For each
+    command it reports the actual steady-state vx (measured from displacement
+    in the second half of the run) and the ratio actual/commanded. Use this to
+    verify the wheel_radius in tests/ugv_chassis_control.py is calibrated: a
+    flat ratio near 1.0 across all speeds means the UGV tracks its velocity
+    command with no systematic over/under-shoot.
 
-Sweeps target_vx in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0]
-to find the saturation curve.
+    Background: the controller maps a desired chassis speed to wheel angular
+    velocity via omega = v / wheel_radius. If wheel_radius is wrong, every
+    commanded speed is off by the same constant ratio. The true geometric
+    radius (0.17775 m) is read from the Husky URDF wheel cylinder.
+
+HOW TO RUN
+    python -m hetero_cosim.experiments.ugv_probe
+
+CONFIG (edit constants near the top)
+    TARGETS  list of commanded vx values (m/s) to sweep.
+    STEPS    physics steps per command (default 2000 = ~8.3 s @ 240 Hz).
+
+OUTPUTS  ->  experiment_ugv_probe/
+    ugv_probe.csv   columns: target_vx, actual_vx, ratio
+    (also printed as a table to stdout)
 """
 
 import os
@@ -15,7 +33,7 @@ import numpy as np
 import pybullet as p
 import pybullet_data
 
-from tests.ugv_chassis_control import UGVController
+from hetero_cosim.ugv_chassis_control import UGVController
 
 OUT = "experiment_ugv_probe"
 STEPS = 2000        # 20 s per run

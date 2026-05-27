@@ -1,10 +1,29 @@
-"""Headless no-noise sim-vs-HIL comparison for the heterogeneous
-3-UAV + 1-UGV formation, matching run_hetero_three_uav_one_ugv_new.py.
+"""Experiment 1 — Stationary baseline: Sim (ODE) vs HIL (PyBullet) comparison.
 
-Sim baseline: ODE integration of dx/dt = M x on the 12-dim virtual state
-(node order [UAV_leader, UGV, UAV_F1, UAV_F2]). Same M and x0 as HIL.
+WHAT IT DOES
+    Runs the heterogeneous 3-UAV + 1-UGV formation with stationary leaders
+    (no cruise velocity, no noise) and compares two "ground truths":
+      - Sim : ODE integration of dx/dt = M x on the 12-dim virtual state
+              (node order [UAV_leader, UGV, UAV_F1, UAV_F2]).
+      - HIL : full PyBullet physics (DSL-PID quadrotors + Husky UGV chassis).
+    This validates that the co-simulation platform reproduces the ideal
+    formation dynamics, and quantifies the residual gap (PID lag, contact
+    dynamics) that is unrelated to the control algorithm.
 
-Outputs go to experiment_hetero_baseline/.
+HOW TO RUN
+    python -m hetero_cosim.experiments.baseline
+    The HIL trajectory is produced once by invoking
+    run_hetero_three_uav_one_ugv_new.py headless, then cached. Delete
+    experiment_hetero_baseline/hil_sigma0.csv to force a fresh HIL run.
+
+CONFIG (edit constants near the top)
+    STEPS   number of control steps (default 6000 = 25 s @ 240 Hz).
+
+OUTPUTS  ->  experiment_hetero_baseline/
+    hil_sigma0.csv           cached HIL trajectory (STEPS x 12)
+    metrics.txt              ||Mx|| endpoints + per-agent Sim-vs-HIL distances
+    figures/mx_convergence.png    ||Mx|| convergence, Sim vs HIL
+    figures/trajectories_3d.png   3D overlay with HIL formation edges
 """
 
 import os
@@ -18,13 +37,17 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 # Import the dynamics builder from the _new script
-from run_hetero_three_uav_one_ugv_new import get_dynamics_and_init
+from hetero_cosim.formations.hetero_ugv import get_dynamics_and_init
 
 OUT = "experiment_hetero_baseline"
 FIG = os.path.join(OUT, "figures")
 HIL_CSV = os.path.join(OUT, "hil_sigma0.csv")
-STEPS = 10000
-DT = 0.01
+STEPS = 6000
+# Real per-step physics time used by CtrlAviary (default pyb_freq = 240 Hz).
+# A previous version used DT = 0.01 here, which gave a wrong 60 s axis on the
+# convergence plot (true HIL horizon is STEPS / 240 ≈ 25 s). Keep PYB_DT for
+# all time-axis and ODE-integration computations.
+PYB_DT = 1.0 / 240.0
 NUM_AGENTS = 4
 LABELS = ["UAV_L", "UGV", "UAV_F1", "UAV_F2"]
 # Communication edges (same as the noise sweep): 5 edges, no UAV_L↔UGV link.
@@ -39,16 +62,17 @@ def run_hil_if_needed():
         return
     env = os.environ.copy()
     env["HETERO_HEADLESS"] = "1"
-    env["HETERO_UDP"]      = "0"
+    env["HETERO_UDP"]      = os.environ.get("HETERO_UDP", "1")
     env["HETERO_TREE"]     = "0"
     env["HETERO_OUT"]      = HIL_CSV
     env["HETERO_STEPS"]    = str(STEPS)
     print(f"[run] HIL headless -> {HIL_CSV}")
-    subprocess.check_call([sys.executable, "run_hetero_three_uav_one_ugv_new.py"], env=env)
+    subprocess.check_call(
+        [sys.executable, "-m", "hetero_cosim.formations.hetero_ugv"], env=env)
 
 
-def sim_ode(M, x0, steps=STEPS, dt=DT):
-    t = np.arange(0, steps + 1) * dt
+def sim_ode(M, x0, total_time, n_samples):
+    t = np.linspace(0.0, total_time, n_samples)
     sol = solve_ivp(lambda _t, x: M @ x, (t[0], t[-1]), x0,
                     t_eval=t, method="RK45",
                     rtol=1e-6, atol=1e-9, max_step=0.05)
@@ -65,15 +89,15 @@ def main():
     hil = np.loadtxt(HIL_CSV, delimiter=",")
     if hil.shape != (STEPS, NUM_AGENTS * 3):
         print(f"[warn] HIL shape {hil.shape} unexpected; using what we have.")
-    t_hil = np.arange(hil.shape[0]) * DT
+    total_time = (hil.shape[0] - 1) * PYB_DT
+    t_hil = np.arange(hil.shape[0]) * PYB_DT
 
-    # Use the HIL row 0 as x0 for the ODE sim so the starting point matches
-    # exactly (the HIL script initializes deterministic positions, but
-    # PyBullet may report tiny offsets after init).
+    # ODE sim integrates over the same physical time as HIL,
+    # using HIL row 0 as x0 so the starting point matches exactly.
     x0_from_hil = hil[0].copy()
-    sim, t_sim = sim_ode(M, x0_from_hil, steps=STEPS, dt=DT)
-    # Also a fresh-x0 ODE (the "ideal") for reference
-    sim_ideal, _ = sim_ode(M, x0, steps=STEPS, dt=DT)
+    sim, t_sim = sim_ode(M, x0_from_hil, total_time=total_time, n_samples=hil.shape[0])
+    # Fresh-x0 ODE for reference (not plotted)
+    sim_ideal, _ = sim_ode(M, x0, total_time=total_time, n_samples=hil.shape[0])
 
     # ||Mx|| curves
     Mx_sim = sim @ M.T
@@ -82,7 +106,7 @@ def main():
     norm_hil = np.linalg.norm(Mx_hil, axis=1)
 
     # Endpoint comparison
-    endpoint_dist = float(np.linalg.norm(hil[-1] - sim[hil.shape[0]-1]))
+    endpoint_dist = float(np.linalg.norm(hil[-1] - sim[-1]))
     norm_sim_final = float(np.linalg.norm(M @ sim[-1]))
     norm_hil_final = float(np.linalg.norm(M @ hil[-1]))
     print(f"||M x_sim(T)||   = {norm_sim_final:.3e}")
@@ -136,11 +160,12 @@ def main():
 
     # Metrics file
     with open(os.path.join(OUT, "metrics.txt"), "w") as f:
+        f.write(f"STEPS = {hil.shape[0]}, PYB_DT = {PYB_DT:.6f}s, total_time = {total_time:.3f}s\n\n")
         f.write(f"||M x_sim(T)||_2  = {norm_sim_final:.6e}\n")
         f.write(f"||M x_HIL(T)||_2 = {norm_hil_final:.6e}\n")
         f.write(f"|| x_HIL(T) - x_sim(T) ||_2 = {endpoint_dist:.6e}\n")
         for j in range(NUM_AGENTS):
-            d = np.linalg.norm(hil[-1, 3*j:3*j+3] - sim[hil.shape[0]-1, 3*j:3*j+3])
+            d = np.linalg.norm(hil[-1, 3*j:3*j+3] - sim[-1, 3*j:3*j+3])
             f.write(f"  per-agent {LABELS[j]}: {d:.6e}\n")
     print(f"figures -> {FIG}/")
 

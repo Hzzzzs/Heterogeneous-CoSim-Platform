@@ -9,7 +9,7 @@ from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.utils.enums import DroneModel, Physics
 
-from tests.ugv_chassis_control import UGVController
+from hetero_cosim.ugv_chassis_control import UGVController
 
 
 # ======================================================================
@@ -93,7 +93,7 @@ def get_dynamics_and_init():
     # 建议在 Unity 里把树稍微往前挪一点，比如放在 X=5 的位置。
     x0 = np.random.rand(n * d)
     x0[0:3] = np.array([0.0, 0.0, 2.0])      # UAV leader
-    x0[3:6] = np.array([1.0, 0.0, 0.08])     # UGV
+    x0[3:6] = np.array([1.0, 0.0, 0.0])     # UGV
     if x0[8] < 0.2:
         x0[8] = 0.6
     if x0[11] < 0.2:
@@ -160,7 +160,7 @@ env = CtrlAviary(
     num_drones=NUM_UAVS,
     initial_xyzs=uav_init_xyzs,
     physics=Physics.PYB,
-    gui=True # 开启物理引擎自带的可视化界面，方便观察碰撞
+    gui=False # 开启物理引擎自带的可视化界面，方便观察碰撞
 )
 
 ctrls = [DSLPIDControl(drone_model=DroneModel.CF2X) for _ in range(NUM_UAVS)]
@@ -179,7 +179,7 @@ ugv_controller = UGVController(ugv_id, env.CLIENT)
 # ======================================================================
 try:
     tree_obj_path = "PyBullet_Terrain.obj"
-    tree_collision_id = p.createCollisionShape(shapeType=p.GEOM_MESH, fileName=tree_obj_path, meshScale=[1, 1, 1], physicsClientId=env.CLIENT)
+    tree_collision_id = p.createCollisionShape(shapeType=p.GEOM_MESH, fileName=tree_obj_path, meshScale=[1, 1, 1], flags=p.GEOM_FORCE_CONCAVE_TRIMESH, physicsClientId=env.CLIENT)
     tree_visual_id = p.createVisualShape(shapeType=p.GEOM_MESH, fileName=tree_obj_path, meshScale=[1, 1, 1], physicsClientId=env.CLIENT)
     
     # mass=0 代表它是一个绝对静态的刚体障碍物
@@ -225,9 +225,41 @@ try:
         real_x_virtual[IDX_UAV_F1 * 3: IDX_UAV_F1 * 3 + 3] = obs_multi[1][0:3]
         real_x_virtual[IDX_UAV_F2 * 3: IDX_UAV_F2 * 3 + 3] = obs_multi[2][0:3]
 
-        # 闭环反馈修正速度 + 期望巡航前馈速度
-        velocities = M_sys @ real_x_virtual + vel_feedforward
-        
+        # 分布式控制律：每个 follower 在自身机体 yaw 局部系下,
+        # 用相对位置测量算反馈,再旋回世界系。leader 反馈速度为零。
+        # 数学上等价于中心化 M @ x,但仅依赖相对测量,可对应真机部署。
+        agent_yaws = {
+            IDX_UAV_LEADER: obs_multi[0][9],
+            IDX_UAV_F1:     obs_multi[1][9],
+            IDX_UAV_F2:     obs_multi[2][9],
+            # UGV yaw 不参与 (它是 leader,不观测邻居)
+        }
+
+        velocities_matrix = np.zeros((TOTAL_AGENTS, 3))
+        for agent_idx in range(TOTAL_AGENTS):
+            if agent_idx in (IDX_UAV_LEADER, IDX_UGV):
+                continue   # leader: 反馈速度为零
+            yaw_i = agent_yaws[agent_idx]
+            c, s = np.cos(yaw_i), np.sin(yaw_i)
+            R_zi     = np.array([[c, -s, 0], [s,  c, 0], [0, 0, 1]])
+            R_zi_inv = np.array([[c,  s, 0], [-s, c, 0], [0, 0, 1]])
+            xi = real_x_virtual[3*agent_idx : 3*agent_idx+3]
+            v_local = np.zeros(3)
+            for nb in range(TOTAL_AGENTS):
+                if nb == agent_idx:
+                    continue
+                M_ij = M_sys[3*agent_idx:3*agent_idx+3, 3*nb:3*nb+3]
+                if np.allclose(M_ij, 0):
+                    continue
+                dp_world = real_x_virtual[3*nb:3*nb+3] - xi
+                dp_local = R_zi_inv @ dp_world
+                v_local += M_ij @ dp_local
+            velocities_matrix[agent_idx] = R_zi @ v_local
+
+        # 共同巡航前馈:所有节点(包括 leader)叠加同一全局速度
+        velocities_matrix += base_vel[None, :]
+        velocities = velocities_matrix.flatten()
+
         targets = (real_x_virtual + formation_dt * velocities).reshape((TOTAL_AGENTS, 3))
         target_vels = velocities.reshape((TOTAL_AGENTS, 3))
 

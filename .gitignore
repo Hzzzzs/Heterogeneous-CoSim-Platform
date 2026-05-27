@@ -10,12 +10,24 @@ experiment_hetero_moving_slow/
 experiment_hetero_moving_compensated/
 analysis_out*/
 drone_trajectories*.csv
+hetero_trajectories*.csv
 # Misc large files
 main.pdf
 PyBullet_Terrain.obj
 *.md5
 examples/debug.py
 examples/test.py
+
+# Personal notes / handoff docs / scratch files (not for the public repo)
+EXPERIMENT_RESULTS.md
+THESIS_HANDOFF.md
+errorFindResult*.m
+20260329*.md
+*潘文达*.md
+# NOTE: obstacles/*.obj ARE tracked on purpose — they are demo runtime assets.
+
+# Legacy / superseded scripts — kept locally for reference, NOT for the public repo
+legacy/
 
 # NumPy saves and videos
 results/

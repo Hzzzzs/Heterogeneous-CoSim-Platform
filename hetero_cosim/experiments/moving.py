@@ -1,21 +1,36 @@
-"""Heterogeneous 3-UAV + 1-UGV formation with a common cruise velocity.
+"""Experiment 2 — Common cruise velocity: Sim vs HIL with a moving formation.
 
-Extends experiment_hetero_baseline.py: instead of leaders being stationary,
-all four agents receive a global velocity feedforward base_vel = [0.5, 0, 0]
-so the entire formation translates along +X while followers maintain the
-relative geometry via the per-follower local-frame law.
+WHAT IT DOES
+    Extends Experiment 1: instead of stationary leaders, ALL four agents
+    receive a common global velocity feedforward base_vel (default
+    [0.5, 0, 0] m/s), so the whole formation translates along +X while the
+    followers maintain the relative geometry via the per-follower local-frame
+    law. Demonstrates that the z-similar control law is invariant to common
+    translation: the formation error ||Mx|| stays at the mm level even though
+    the absolute positions sweep across meters.
 
-Control law (per-follower i):
-    u_i^local   = Σ_j M_ij · R_z(-yaw_i) (x_j − x_i)
-    u_i^world   = R_z(+yaw_i) u_i^local                          (formation feedback)
-    v_i^cmd     = u_i^world + base_vel                          (+ feedforward)
+    Control law (per-follower i):
+        u_i^local = Σ_j M_ij · R_z(-yaw_i) (x_j − x_i)      (formation feedback)
+        u_i^world = R_z(+yaw_i) u_i^local
+        v_i^cmd   = u_i^world + base_vel                    (+ common feedforward)
+    Leaders (UAV_L, UGV) receive only base_vel (no feedback term).
+    Sim baseline: ODE dx/dt = M x + v_ff, v_ff = tile(base_vel, 4).
 
-Leaders (UAV_L, UGV) receive only base_vel (no feedback term).
+HOW TO RUN
+    python -m hetero_cosim.experiments.moving                       # default 0.5 m/s
+    HETERO_BASE_VEL=0.3,0,0 python -m hetero_cosim.experiments.moving
+    HETERO_MOVING_OUT=my_run HETERO_BASE_VEL=0.2,0,0 python -m hetero_cosim.experiments.moving
+    The HIL trajectory is cached in <out>/hil.csv; delete it to re-run HIL.
 
-Sim baseline: ODE integration of dx/dt = M x + v_ff, where v_ff is base_vel
-tiled across all 4 agents.
+ENV VARS
+    HETERO_BASE_VEL   "vx,vy,vz" cruise velocity (default "0.5,0,0").
+    HETERO_MOVING_OUT output directory (default "experiment_hetero_moving").
 
-Outputs go to experiment_hetero_moving/.
+OUTPUTS  ->  <HETERO_MOVING_OUT>/
+    hil.csv                       cached HIL trajectory (6000 x 12, 25 s)
+    metrics.txt                   ||Mx||, mean vx of UAV_L & UGV, per-agent gap
+    figures/mx_norm_vs_time.png   ||Mx|| convergence, Sim vs HIL
+    figures/formation_trajectories.png  3D overlay with HIL formation edges
 """
 
 import os
@@ -33,8 +48,9 @@ from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from gym_pybullet_drones.utils.enums import DroneModel, Physics
 
-from run_hetero_three_uav_one_ugv_new import get_dynamics_and_init
-from tests.ugv_chassis_control import UGVController
+from hetero_cosim.formations.hetero_ugv import get_dynamics_and_init
+from hetero_cosim.ugv_chassis_control import UGVController
+from hetero_cosim.unity_bridge import UnityBridge
 
 OUT = os.environ.get("HETERO_MOVING_OUT", "experiment_hetero_moving")
 FIG = os.path.join(OUT, "figures")
@@ -47,7 +63,7 @@ STEPS = 6000
 # we read it back from the env after construction and use it for time axes,
 # velocity averages, and the ODE sim horizon — the previous version used
 # DT here and that gave a 60-s vs 25-s mismatch with PyBullet.
-LOOKAHEAD_DT = 0.01
+LOOKAHEAD_DT = 0.001
 _bv = os.environ.get("HETERO_BASE_VEL", "0.5,0,0")
 BASE_VEL = np.array([float(x) for x in _bv.split(",")])
 assert BASE_VEL.shape == (3,), f"HETERO_BASE_VEL must be 3 comma-separated floats, got {_bv}"
@@ -87,6 +103,7 @@ def run_hil(M, x0, steps=STEPS, base_vel=BASE_VEL):
                         physicsClientId=env.CLIENT)
     ugv_controller = UGVController(ugv_id, env.CLIENT)
 
+    bridge = UnityBridge()
     pos_hist = np.zeros((steps, TOTAL_AGENTS, 3))
     uav_virtual_idx = [IDX_UAV_LEADER, IDX_UAV_F1, IDX_UAV_F2]
 
@@ -152,16 +169,19 @@ def run_hil(M, x0, steps=STEPS, base_vel=BASE_VEL):
                     target_rpy=np.zeros(3), target_vel=target_vel_uav[j])
                 actions[j] = a
                 pos_hist[i, uav_virtual_idx[j], :] = obs_multi[j][0:3]
+                bridge.send_uav(j, obs_multi[j][0:3], obs_multi[j][7:10])
 
             target_vel_ugv = target_vels[IDX_UGV].copy()
             target_vel_ugv = np.clip(target_vel_ugv, -1.0, 1.0)
             target_vel_ugv[2] = 0.0
             ugv_controller.compute_and_apply_control(ugv_quat, target_vel_ugv)
             pos_hist[i, IDX_UGV, :] = ugv_pos
+            bridge.send_ugv(0, ugv_pos, ugv_quat)
 
             env.step(actions)
     finally:
         env.close()
+        bridge.close()
     return pos_hist.reshape(steps, TOTAL_AGENTS * 3)
 
 
