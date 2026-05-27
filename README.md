@@ -60,18 +60,46 @@ Built on top of [gym-pybullet-drones](https://github.com/utiasDSL/gym-pybullet-d
 
 ## Installation
 
+This repository is a downstream of **gym-pybullet-drones**, so the Python
+backend installs exactly the same way as the upstream project. Use an isolated
+environment (conda recommended, as in the
+[upstream README](https://github.com/utiasDSL/gym-pybullet-drones#installation)).
+
+### Option A — full install (same as gym-pybullet-drones)
+
 ```bash
 git clone https://github.com/Hzzzzs/Heterogeneous-CoSim-Platform.git
 cd Heterogeneous-CoSim-Platform
-pip install -e .
-pip install numpy scipy matplotlib pybullet
+
+conda create -n drones python=3.10
+conda activate drones
+pip install --upgrade pip
+pip install -e .          # if pybullet fails to build: sudo apt install build-essential
 ```
 
-Tested on Python 3.10, Ubuntu 22.04 / WSL2.
+`pip install -e .` reads this repo's `pyproject.toml` (which **is** the
+gym-pybullet-drones spec) and pulls every dependency, including the RL extras
+(`stable-baselines3`, `control`). This is the safest path and matches upstream.
 
-> **Always run from the repository root** (the commands below use
+### Option B — lightweight install (only what the formation code needs)
+
+Our experiments and demos never import `torch` / `stable-baselines3` / `control`
+(verified: the `CtrlAviary` → `DSLPIDControl` chain pulls none of them). If you
+only want to reproduce the four experiments, you can skip the heavy RL stack:
+
+```bash
+conda create -n hetero python=3.10
+conda activate hetero
+pip install numpy scipy matplotlib pybullet gymnasium
+pip install -e . --no-deps      # register gym_pybullet_drones without RL deps
+```
+
+Tested dependency versions (Python 3.10): numpy 1.26 / scipy 1.15 /
+matplotlib 3.5 / pybullet 3.2 / gymnasium 1.2. Verified on Ubuntu 22.04 (WSL2).
+
+> **Always run from the repository root.** The commands below use
 > `python -m hetero_cosim...`, which relies on the repo root being the working
-> directory). Output folders and `obstacles/` are resolved relative to it.
+> directory; output folders and `obstacles/` are resolved relative to it.
 
 ---
 
@@ -146,23 +174,82 @@ speeds means the UGV tracks its velocity command with no systematic error.
 
 ---
 
-## Live Unity Visualization
+## Unity Visualization Platform
+
+The platform is a **dual-engine, decoupled** design: PyBullet (Python) is the
+physics backend, Unity is the rendering frontend, running as two independent
+processes coupled by two buses. Decoupling means the rendering load never
+perturbs the 240 Hz physics step — it avoids the "15.5× → 1.3× single-machine
+slowdown when visualization is turned on" that a single-engine setup suffers.
+
+```
+┌────────────────────┐   UDP async broadcast (ASCII, 240 Hz)   ┌──────────────────┐
+│  PyBullet backend  │ ───────────────────────────────────────▶ │  Unity frontend  │
+│  (physics, Python) │                                          │  (rendering)     │
+│                    │ ◀─────────────────────────────────────── │                  │
+└────────────────────┘   .obj terrain reverse-injection         └──────────────────┘
+```
+
+- **Forward bus (PyBullet → Unity):** every physics step, the backend packs each
+  agent's `class, id, position, attitude` into a lightweight ASCII datagram and
+  broadcasts it over a **non-blocking UDP** socket. UDP (not TCP) is chosen
+  because the frontend is visualization-only — it never feeds back into control,
+  so a dropped packet is at worst one interpolated frame ("low-latency priority"
+  over "zero loss"). Message format:
+  ```
+  UAV,{id},{x},{y},{z},{roll},{pitch},{yaw}
+  UGV,{id},{x},{y},{z},{roll},{pitch},{yaw}
+  ```
+- **Reverse bus (Unity → PyBullet):** scenes built in Unity (Terrain + prefab
+  trees/buildings) are exported by a C# plugin as world-aligned `.obj` collision
+  meshes, which PyBullet loads as mass-0 static rigid bodies. This closes the
+  "visual obstacle exists in Unity but the backend only has flat ground" gap.
+
+### The Unity project (`unity/`)
+
+A Unity **2022.3.62f1** project lives in [`unity/`](unity/) (only
+`Assets/ Packages/ ProjectSettings/` are committed; the `Library/` cache is
+regenerated on first open).
+
+1. Open **Unity Hub → Add project from disk →** select the `unity/` folder.
+2. Open with Unity **2022.3.62f1** (let it rebuild the `Library/` cache).
+3. Open the main scene under `Assets/Scenes/`, press **Play** — it now listens
+   on UDP `5006` for pose datagrams.
+
+### Coordinate realignment (important)
+
+PyBullet uses a **Z-Up right-handed** world; Unity uses a **Y-Up left-handed**
+world. The frontend re-aligns incoming poses with a single odd permutation
+(a chirality flip, `det(P) = -1`):
+
+- **Position:** `[X, Y, Z]_PB → [X, Z, Y]_Unity`
+- **Attitude:** rebuild rotation from the euler angles, then `R_Unity = P · R_PB · Pᵀ`
+- **Visual yaw compensation:** third-party ground-vehicle models often define a
+  different forward axis (e.g. the Husky model faces `-X_model`, not `+Z`). A
+  configurable per-model yaw offset (e.g. ±90°) aligns the model's heading with
+  the physics velocity vector, removing the "car slides sideways" rendering glitch.
+
+### Running a live demo
 
 The `demos/` scripts mirror the four experiments but render in the PyBullet GUI
-and stream 240 Hz pose data to Unity over UDP (default `127.0.0.1:5006`).
-Obstacles in `obstacles/` are loaded with collision detection; a mid-air or
-obstacle collision stops the run with a message.
+**and** stream 240 Hz poses to Unity. Obstacles in `obstacles/` are loaded with
+collision detection; a mid-air or obstacle collision stops the run and prints
+the offending bodies.
 
 ```bash
-# 1. start the Unity receiver listening on UDP 5006 (or set UNITY_PORT)
-# 2. run any demo from the repo root:
-python -m hetero_cosim.demos.baseline                 # stationary
-python -m hetero_cosim.demos.moving                   # cruise at 0.5 m/s
-HETERO_SIGMA=0.30 python -m hetero_cosim.demos.noise     # noise, no filter
+# 1. In Unity, press Play (scene listens on UDP 5006).
+# 2. From the repo root, run any demo:
+python -m hetero_cosim.demos.baseline                    # stationary formation
+python -m hetero_cosim.demos.moving                      # cruise at 0.5 m/s
+HETERO_SIGMA=0.30 python -m hetero_cosim.demos.noise     # noisy, no filter
 HETERO_SIGMA=1.0  python -m hetero_cosim.demos.noise_kf  # noise + KF, stays stable
 ```
 
-Standalone GUI scenes (Husky + tree obstacle, and the Ackermann racecar):
+If Unity runs on a different machine (or Windows host ↔ WSL), point the sender
+at it: `UNITY_HOST=192.168.1.50 python -m hetero_cosim.demos.moving`
+(the script auto-resolves the WSL host IP otherwise).
+
+Standalone GUI scenes:
 
 ```bash
 python -m hetero_cosim.formations.hetero_ugv_gui      # Husky + tree + Unity
