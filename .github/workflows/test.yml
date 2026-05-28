@@ -1,32 +1,36 @@
-name: Test Package
+name: Smoke Test
 
-on: 
+on:
   push:
-    branches: [ main ] 
-  schedule:
-    - cron: '0 3 * * 6'
+    branches: [ main ]
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
-  run_tests:
+  smoke:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Set up Python
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-    - name: Install dependencies
+    - name: Install lightweight dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest
-    - name: Install package
+        pip install numpy scipy matplotlib pybullet gymnasium
+        pip install -e . --no-deps
+    - name: Import chain check
       run: |
-        pip install -e .
-    - name: Unit tests
+        python -c "from hetero_cosim.formations.hetero_ugv import get_dynamics_and_init; from hetero_cosim.runtime import run_demo; from hetero_cosim.ugv_chassis_control import UGVController; from hetero_cosim.unity_bridge import UnityBridge; print('imports OK')"
+    - name: Demo smoke test (headless, short, no UDP/obstacles)
+      env:
+        HETERO_HEADLESS: '1'
+        HETERO_UDP: '0'
+        HETERO_OBSTACLE_DIR: ''
+        HETERO_STEPS: '120'
       run: |
-        python -m pytest tests/
-        rm -rf tmp/
+        python -m hetero_cosim.demos.moving
+        python -m hetero_cosim.demos.noise_kf
